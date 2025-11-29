@@ -1,0 +1,5 @@
+{
+  "name": "Open Marker",
+  "description": "A generative flowchart maker that turns natural language into visual diagrams using Gemini and React Flow.",
+  "requestFramePermissions": []
+}
