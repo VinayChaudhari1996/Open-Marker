@@ -1,20 +1,82 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
 
-# Run and deploy your AI Studio app
+# 🖍️ Open Marker
 
-This contains everything you need to run your app locally.
+**Turn natural language into professional architecture diagrams in seconds.**
 
-View your app in AI Studio: https://ai.studio/apps/drive/1tuTtulxc2iGXgAhL2M4ogB9fxK10VcKV
+Open Marker is an AI-powered flowchart tool. Instead of dragging and dropping boxes manually, you simply describe your system (e.g., *"A React app connecting to a Node backend and a Postgres DB"*), and Open Marker draws it for you.
 
-## Run Locally
+---
 
-**Prerequisites:**  Node.js
+### 🚀 What does this solve?
 
+Creating software diagrams is usually slow and tedious. You spend more time aligning boxes and finding icons than actually thinking about the architecture.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+**Open Marker fixes this:**
+1.  **Speed**: Type a sentence, get a diagram.
+2.  **Accuracy**: It understands technical concepts (AWS, Databases, APIs).
+3.  **Self-Correcting**: It doesn't just generate random nodes; it self-repairs to ensure the diagram makes sense.
+
+---
+
+### 🤖 The Multi-Agent Engine
+
+This isn't just a simple chatbot. Open Marker uses a **Multi-Agent System** where three different AI "employees" work together to build your diagram:
+
+1.  **The Architect** 🏗️
+    *   *Role:* Reads your request and drafts the initial raw structure of nodes and edges.
+    *   *Model:* Gemini 3 Pro
+
+2.  **The Inspector** 🕵️
+    *   *Role:* Reviews the Architect's work. It fixes broken connections, simplifies messy layouts, and ensures the diagram follows logical patterns (Left → Right flow).
+    *   *Model:* Gemini 3 Pro
+
+3.  **The Designer** 🎨
+    *   *Role:* Looks at the final nodes and selects the perfect icon for each service (e.g., picking the official Postgres logo for a database node).
+    *   *Model:* Gemini 2.5 Flash
+
+---
+
+### 🛠️ Tech Stack
+
+*   **Frontend**: React + TypeScript
+*   **Visuals**: Tailwind CSS + Shadcn/ui
+*   **Diagramming**: React Flow + Dagre (Auto-layout)
+*   **AI Models**: Google Gemini API via `@google/genai`
+*   **Icons**: Lucide React
+
+---
+
+### ⚡ Getting Started
+
+1.  **Clone the repo**
+    ```bash
+    git clone https://github.com/yourusername/open-marker.git
+    cd open-marker
+    ```
+
+2.  **Install dependencies**
+    ```bash
+    npm install
+    ```
+
+3.  **Set your API Key**
+    Open Marker requires a Google Gemini API key.
+    
+    *   Create a `.env` file in the root.
+    *   Add: `API_KEY=your_google_ai_key_here`
+
+4.  **Run it**
+    ```bash
+    npm start
+    ```
+
+---
+
+### 📸 Features
+*   **Interactive Canvas**: Drag, zoom, and pan around your diagram.
+*   **Edit Mode**: Double-click any node or edge to change text or colors.
+*   **Smart History**: It remembers your previous diagrams so you can switch back.
+*   **Export**: Right-click to copy the diagram as a high-quality PNG.
+*   **Dark Mode**: Fully supported Apple-style dark theme.
+
+**License**: MIT
