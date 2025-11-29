@@ -1,11 +1,33 @@
 
-# 🖍️ Open Marker
+<div align="center">
+  <a href="https://github.com/yourusername/open-marker">
+    <img src="docs/logo.svg" alt="Open Marker Logo" width="600" height="auto">
+  </a>
 
-**Turn natural language into professional architecture diagrams in seconds.**
+  <h1 align="center">Open Marker</h1>
 
-Open Marker is an AI-powered flowchart tool. Instead of dragging and dropping boxes manually, you simply describe your system (e.g., *"A React app connecting to a Node backend and a Postgres DB"*), and Open Marker draws it for you.
+  <p align="center">
+    <b>Turn natural language into professional architecture diagrams in seconds.</b>
+    <br />
+    <br />
+    <a href="https://github.com/yourusername/open-marker/issues">Report Bug</a>
+    ·
+    <a href="https://github.com/yourusername/open-marker/pulls">Request Feature</a>
+  </p>
+</div>
 
----
+<details>
+  <summary>Table of Contents</summary>
+  <ol>
+    <li><a href="#-what-does-this-solve">About The Project</a></li>
+    <li><a href="#-the-multi-agent-engine">How It Works</a></li>
+    <li><a href="#-tech-stack">Tech Stack</a></li>
+    <li><a href="#-getting-started">Getting Started</a></li>
+    <li><a href="#-features">Features</a></li>
+  </ol>
+</details>
+
+<hr />
 
 ### 🚀 What does this solve?
 
