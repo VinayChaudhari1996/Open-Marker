@@ -19,19 +19,28 @@ import {
   Waves,
   ChevronDown,
   Type,
-  Highlighter // Changed from Spline
+  Highlighter,
+  PanelLeftOpen,
+  Plus,
+  Copy,
+  Check
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { Sender, ChatMessage } from './types';
-import { streamAgentResponse, getSessions, getSessionMessages, generateIconMapping, inspectGraph } from './services/flowService';
+import { streamAgentResponse, getSessions, getSessionMessages, generateIconMapping } from './services/flowService';
 import { extractPartialGraphFromText, parseGraphFromText } from './lib/parsing';
-import { getLayoutedElements, transformDataToFlow } from './lib/graphUtils';
+import { transformDataToFlow } from './lib/graphUtils';
 import CustomNode from './components/CustomNode';
 import NoteNode from './components/NoteNode';
 import EditModal from './components/EditModal';
-import ContextMenu from './components/ContextMenu';
 import Sidebar from './components/Sidebar';
 import { ThreadMetadata } from './mastra/memory';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "./components/ui/context-menu";
 
 const nodeTypes = { custom: CustomNode, note: NoteNode };
 
@@ -49,9 +58,6 @@ const App: React.FC = () => {
   const [sessions, setSessions] = useState<ThreadMetadata[]>([]);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
-  
-  // Context Menu State
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [isCopying, setIsCopying] = useState(false);
 
   // Edit Node State
@@ -119,16 +125,6 @@ const App: React.FC = () => {
   useEffect(() => {
       if (sidebarView === 'history') getSessions().then(setSessions);
   }, [sidebarView]);
-
-  // Context Menu Handlers
-  const onPaneContextMenu = useCallback((event: React.MouseEvent) => {
-    event.preventDefault();
-    setContextMenu({ x: event.clientX, y: event.clientY });
-  }, []);
-
-  const closeContextMenu = useCallback(() => {
-    setContextMenu(null);
-  }, []);
 
   // Edit Node Handlers
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: FlowNode) => {
@@ -256,8 +252,7 @@ const App: React.FC = () => {
     }
     
     setIsCopying(false);
-    closeContextMenu();
-  }, [rfInstance, nodes, closeContextMenu]);
+  }, [rfInstance, nodes]);
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
@@ -282,7 +277,7 @@ const App: React.FC = () => {
                 setMessages(prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, text: accumulatedText } : msg));
 
                 const now = Date.now();
-                if (now - lastLayoutTime.current > 500) {
+                if (now - lastLayoutTime.current > 400) {
                     const partialGraph = extractPartialGraphFromText(accumulatedText);
                     if (partialGraph && partialGraph.nodes.length > 0) {
                         const { nodes: lNodes, edges: lEdges } = transformDataToFlow(partialGraph, edgeTypeRef.current, isDarkModeRef.current);
@@ -299,29 +294,25 @@ const App: React.FC = () => {
             }
         }
 
-        const rawGraphData = parseGraphFromText(accumulatedText);
+        const finalGraphData = parseGraphFromText(accumulatedText);
         
-        if (rawGraphData.nodes.length > 0) {
-            // CALL INSPECTOR
-            setAgentStatus("Inspector fixing diagram...");
-            const refinedGraphData = await inspectGraph(rawGraphData);
-
-            // RENDER REFINED GRAPH
-            let { nodes: finalNodes, edges: finalEdges } = transformDataToFlow(refinedGraphData, edgeTypeRef.current, isDarkModeRef.current);
+        if (finalGraphData.nodes.length > 0) {
+            // RENDER FINAL GRAPH DIRECTLY (Inspector skipped for speed)
+            let { nodes: finalNodes, edges: finalEdges } = transformDataToFlow(finalGraphData, edgeTypeRef.current, isDarkModeRef.current);
             setNodes(prev => {
                 const notes = prev.filter(n => n.type === 'note');
                 return [...finalNodes, ...notes];
             });
             setEdges(finalEdges);
 
-            // POLISH ICONS
+            // POLISH ICONS (FAST)
             setAgentStatus("Polishing icons...");
-            const iconMap = await generateIconMapping(refinedGraphData.nodes);
+            const iconMap = await generateIconMapping(finalGraphData.nodes);
             
             if (Object.keys(iconMap).length > 0) {
                 const enrichedGraph = {
-                    ...refinedGraphData,
-                    nodes: refinedGraphData.nodes.map(n => ({
+                    ...finalGraphData,
+                    nodes: finalGraphData.nodes.map(n => ({
                         ...n,
                         data: { ...n.data!, icon: iconMap[n.id] || n.data?.icon }
                     }))
@@ -381,7 +372,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen w-full bg-white dark:bg-[#181818] text-zinc-900 dark:text-zinc-100 font-sans overflow-hidden" onClick={closeContextMenu}>
+    <div className="flex h-screen w-full bg-white dark:bg-[#181818] text-zinc-900 dark:text-zinc-100 font-sans overflow-hidden">
       
       <Sidebar 
           isSidebarCollapsed={isSidebarCollapsed}
@@ -409,56 +400,82 @@ const App: React.FC = () => {
               }}>
          </div>
 
-         <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            nodeTypes={nodeTypes}
-            onInit={setRfInstance}
-            onPaneContextMenu={onPaneContextMenu}
-            onNodeDoubleClick={onNodeDoubleClick}
-            onEdgeDoubleClick={onEdgeDoubleClick}
-            fitView
-            deleteKeyCode={['Backspace', 'Delete']}
-            defaultEdgeOptions={{ type: edgeType, animated: false }}
-         >
-            <Controls className="!bg-white dark:!bg-black !border-zinc-200 dark:!border-zinc-800 !rounded-lg !shadow-sm [&>button]:!border-none [&>button]:!text-black dark:[&>button]:!text-white" />
-            
-            <Panel position="top-right" className="m-6 flex gap-3">
-                <button onClick={handleAddNote} className="flex items-center justify-center h-9 w-9 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-md text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors shadow-sm" title="Add Note">
-                    <Type size={16} />
+         {/* Floating Sidebar Trigger (Visible when collapsed) */}
+         {isSidebarCollapsed && (
+            <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 p-1.5 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm animate-in fade-in slide-in-from-left-2 duration-300">
+                <button 
+                    onClick={() => setIsSidebarCollapsed(false)}
+                    className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-300 transition-colors"
+                    title="Open Sidebar"
+                >
+                    <PanelLeftOpen size={20} />
                 </button>
-                <div className="relative">
-                    <button onClick={(e) => { e.stopPropagation(); setIsEdgeTypeOpen(!isEdgeTypeOpen); }} className="flex items-center gap-2 h-9 px-3 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-md text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors shadow-sm">
-                        {edgeType === 'smoothstep' && <Route size={14}/>}
-                        {edgeType === 'step' && <CornerDownRight size={14}/>}
-                        {edgeType === 'default' && <Waves size={14}/>}
-                        {edgeType === 'straight' && <Minus size={14}/>}
-                        <span className="capitalize">{edgeType.replace('smoothstep', 'Smooth')}</span>
-                        <ChevronDown size={14} className="opacity-50"/>
-                    </button>
-                    {isEdgeTypeOpen && (
-                        <div className="absolute right-0 top-full mt-2 w-32 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-1 shadow-lg z-50 animate-in fade-in zoom-in-95 duration-100">
-                            {['smoothstep', 'step', 'default', 'straight'].map(t => (
-                                <button key={t} onClick={() => { setEdgeType(t); setIsEdgeTypeOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-md capitalize transition-colors">
-                                    {t.replace('smoothstep', 'Smooth')}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </Panel>
-         </ReactFlow>
-         
-         {contextMenu && (
-            <ContextMenu 
-                x={contextMenu.x} 
-                y={contextMenu.y} 
-                onCopy={copyDiagramAsPng} 
-                isCopying={isCopying} 
-            />
+                <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800 mx-1" />
+                <button 
+                    onClick={() => {
+                        setIsSidebarCollapsed(false);
+                        resetChat();
+                    }}
+                    className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-300 transition-colors"
+                    title="New Diagram"
+                >
+                    <Plus size={20} />
+                </button>
+            </div>
          )}
+
+         <ContextMenu>
+             <ContextMenuTrigger>
+                 <div className="w-full h-full">
+                     <ReactFlow
+                        nodes={nodes}
+                        edges={edges}
+                        onNodesChange={onNodesChange}
+                        onEdgesChange={onEdgesChange}
+                        nodeTypes={nodeTypes}
+                        onInit={setRfInstance}
+                        onNodeDoubleClick={onNodeDoubleClick}
+                        onEdgeDoubleClick={onEdgeDoubleClick}
+                        fitView
+                        deleteKeyCode={['Backspace', 'Delete']}
+                        defaultEdgeOptions={{ type: edgeType, animated: false }}
+                     >
+                        <Controls className="!bg-white dark:!bg-black !border-zinc-200 dark:!border-zinc-800 !rounded-lg !shadow-sm [&>button]:!border-none [&>button]:!text-black dark:[&>button]:!text-white" />
+                        
+                        <Panel position="top-right" className="m-6 flex gap-3">
+                            <button onClick={handleAddNote} className="flex items-center justify-center h-9 w-9 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-md text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors shadow-sm" title="Add Note">
+                                <Type size={16} />
+                            </button>
+                            <div className="relative">
+                                <button onClick={(e) => { e.stopPropagation(); setIsEdgeTypeOpen(!isEdgeTypeOpen); }} className="flex items-center gap-2 h-9 px-3 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-md text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors shadow-sm">
+                                    {edgeType === 'smoothstep' && <Route size={14}/>}
+                                    {edgeType === 'step' && <CornerDownRight size={14}/>}
+                                    {edgeType === 'default' && <Waves size={14}/>}
+                                    {edgeType === 'straight' && <Minus size={14}/>}
+                                    <span className="capitalize">{edgeType.replace('smoothstep', 'Smooth')}</span>
+                                    <ChevronDown size={14} className="opacity-50"/>
+                                </button>
+                                {isEdgeTypeOpen && (
+                                    <div className="absolute right-0 top-full mt-2 w-32 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-1 shadow-lg z-50 animate-in fade-in zoom-in-95 duration-100">
+                                        {['smoothstep', 'step', 'default', 'straight'].map(t => (
+                                            <button key={t} onClick={() => { setEdgeType(t); setIsEdgeTypeOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-md capitalize transition-colors">
+                                                {t.replace('smoothstep', 'Smooth')}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </Panel>
+                     </ReactFlow>
+                 </div>
+             </ContextMenuTrigger>
+             <ContextMenuContent className="w-64">
+                 <ContextMenuItem onSelect={copyDiagramAsPng} className="gap-2">
+                     {isCopying ? <Check size={14} /> : <Copy size={14} />}
+                     Copy as PNG
+                 </ContextMenuItem>
+             </ContextMenuContent>
+         </ContextMenu>
          
          {(editingNode || editingEdge) && (
             <EditModal 

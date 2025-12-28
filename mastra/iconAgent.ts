@@ -1,4 +1,3 @@
-
 import { Agent, GoogleModel } from './core';
 
 const API_KEY = process.env.API_KEY || '';
@@ -22,8 +21,9 @@ Example Input: [{"id":"1", "label":"Redis"}]
 Example Output: {"1": "Database"}
 `;
 
+// Using gemini-3-flash-preview for basic text tasks as per guidelines
 export const iconSelectorAgent = new Agent({
     name: "Icon Selector",
     instructions: SYSTEM_INSTRUCTIONS,
-    model: new GoogleModel({ name: "gemini-2.5-flash", apiKey: API_KEY })
+    model: new GoogleModel({ name: "gemini-3-flash-preview", apiKey: API_KEY })
 });

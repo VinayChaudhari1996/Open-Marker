@@ -46,7 +46,7 @@ export const flowGenAgent = new Agent({
     name: "Open Marker Architect",
     instructions: SYSTEM_INSTRUCTIONS,
     model: new GoogleModel({
-        name: "gemini-3-pro-preview",
+        name: "gemini-3-flash-preview",
         apiKey: API_KEY
     }),
     memory: agentMemory,

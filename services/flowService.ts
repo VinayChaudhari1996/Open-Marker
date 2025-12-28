@@ -1,7 +1,6 @@
 
 import { GroundingSource, GraphNode, AgentStatus, GraphData } from "../types";
 import { flowGenAgent } from "../mastra/agent";
-import { inspectorAgent } from "../mastra/inspectorAgent";
 import { iconSelectorAgent } from "../mastra/iconAgent";
 import { ThreadMetadata, MemoryMessage } from "../mastra/memory";
 import { scrapeUrl } from "../lib/scraper";
@@ -53,24 +52,10 @@ export async function* streamAgentResponse(prompt: string, threadId?: string): A
   }
 }
 
+/**
+ * Pass-through function. Inspector agent is removed for performance.
+ */
 export async function inspectGraph(graphData: GraphData): Promise<GraphData> {
-    // Convert graph to string for prompt
-    const payload = JSON.stringify(graphData);
-    
-    try {
-        const stream = await inspectorAgent.stream(`Review and optimize this graph. Return the fixed JSON:\n${payload}`);
-        let fullText = "";
-        for await (const chunk of stream) {
-            fullText += chunk.text || "";
-        }
-        
-        const optimized = parseGraphFromText(fullText);
-        if (optimized.nodes.length > 0) return optimized;
-        
-    } catch (e) {
-        console.warn("Inspector failed, returning original graph", e);
-    }
-    
     return graphData;
 }
 
