@@ -1,4 +1,5 @@
 
+
 export type DiagramType = 'flowchart' | 'architecture' | 'process' | 'decision-tree' | 'sequence' | 'mindmap';
 export type Intent = 'create' | 'update' | 'delete' | 'clarify';
 
@@ -9,7 +10,7 @@ export type NodeType = 'client' | 'service' | 'database' | 'interface' | 'custom
 
 export interface ReactFlowNode {
   id: string;
-  type: string;
+  type?: string;
   parentId?: string;
   position: { x: number; y: number };
   data: {
@@ -19,15 +20,15 @@ export interface ReactFlowNode {
     isContainer?: boolean;
     [key: string]: any;
   };
-  width?: number;
-  height?: number;
+  width?: number | null;
+  height?: number | null;
 }
 
 export interface ReactFlowEdge {
   id: string;
   source: string;
   target: string;
-  label?: string;
+  label?: string | any;
   type?: string;
   animated?: boolean;
 }
@@ -113,4 +114,16 @@ export interface GroundingSource {
 export interface AgentStatus {
   type: 'info' | 'error' | 'success';
   message: string;
+}
+
+/**
+ * SESSION MANAGEMENT
+ */
+export interface SavedSession {
+  id: string;
+  name: string;
+  updatedAt: number;
+  nodes: ReactFlowNode[];
+  edges: ReactFlowEdge[];
+  messages: ChatMessage[];
 }

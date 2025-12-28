@@ -9,90 +9,93 @@ interface CustomNodeData {
   description?: string;
   icon?: string;
   isContainer?: boolean;
+  isDrawing?: boolean;
+  variant?: 'default' | 'amber' | 'blue'; // New variant prop
 }
 
-const getIconComponent = (name?: string) => {
-  if (!name) return null;
-  const normalized = name.split(/[-_\s]+/).map(part => part ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase() : '').join('');
-  return (LucideIcons as any)[normalized] || (LucideIcons as any)[name] || null;
-};
-
-const getThemeStyles = (label: string, isContainer: boolean) => {
-  const l = label.toLowerCase();
-  
-  if (isContainer) {
-    // High-level system boundaries (Amber)
-    if (l.includes('pipeline') || l.includes('interface') || l.includes('user') || l.includes('ui') || l.includes('system') || l.includes('frontend')) {
-      return { border: 'border-[#CC8D39]', text: 'text-[#CC8D39]', bg: 'bg-white' };
-    }
-    // Functional grouping (Blue)
-    return { border: 'border-[#3D78D8]', text: 'text-[#3D78D8]', bg: 'bg-white' };
-  }
-
-  return { border: 'border-zinc-300', text: 'text-zinc-900', bg: 'bg-transparent' };
+const getIcon = (name?: string) => {
+  if (!name) return LucideIcons.Box;
+  const normalized = name.charAt(0).toUpperCase() + name.slice(1);
+  return (LucideIcons as any)[normalized] || (LucideIcons as any)[name] || LucideIcons.Box;
 };
 
 const CustomNode = ({ data, selected, isConnectable }: NodeProps<CustomNodeData>) => {
-  const IconComponent = useMemo(() => getIconComponent(data.icon), [data.icon]);
-  const theme = useMemo(() => getThemeStyles(data.label, !!data.isContainer), [data.label, data.isContainer]);
-
+  const Icon = useMemo(() => getIcon(data.icon), [data.icon]);
+  
+  // 1. CONTAINER NODE
   if (data.isContainer) {
+    // Determine colors based on variant
+    const isAmber = data.variant === 'amber';
+    const borderColor = isAmber ? "border-amber-500/80 dark:border-amber-500/80" : "border-blue-500/60 dark:border-blue-400/60";
+    const labelColor = isAmber ? "text-amber-700 dark:text-amber-400" : "text-blue-600 dark:text-blue-400";
+    const iconColor = isAmber ? "text-amber-600 dark:text-amber-400" : "text-blue-500 dark:text-blue-400";
+    const ringColor = isAmber ? "ring-amber-500" : "ring-blue-500";
+
     return (
       <div className={cn(
-        "relative w-full h-full rounded-2xl border-[2.5px] transition-all duration-300",
-        theme.border,
-        "bg-white/5",
-        selected ? "ring-[4px] ring-zinc-400/10" : ""
+        "relative min-w-[300px] h-full w-full rounded-xl border-2 transition-all duration-300 pointer-events-none bg-white/5 dark:bg-white/5",
+        borderColor,
+        selected ? `ring-1 ${ringColor}` : ""
       )}>
-        {/* Container Header Badge */}
-        <div className={cn(
-          "absolute -top-5 left-6 flex items-center gap-3 px-4 py-2 border-[2.5px] rounded-lg text-[14px] font-bold uppercase tracking-tight bg-white shadow-sm whitespace-nowrap",
-          theme.border,
-          theme.text
-        )}>
-          {IconComponent && <IconComponent size={20} strokeWidth={2.5} />}
-          {data.label}
+        {/* The Container Label */}
+        <div className="absolute -top-3.5 left-4">
+            <div className={cn(
+                "flex items-center gap-1.5 px-2 py-0.5 bg-white dark:bg-[#181818] border rounded-md shadow-sm",
+                isAmber ? "border-amber-200 dark:border-amber-900/50" : "border-blue-200 dark:border-blue-900/50"
+            )}>
+                {data.icon && <Icon size={14} className={iconColor} strokeWidth={2.5} />}
+                <span className={cn("text-[11px] font-bold uppercase tracking-widest font-sans", labelColor)}>
+                {data.label}
+                </span>
+            </div>
         </div>
         
-        {/* All 4 Handles for Containers */}
-        <Handle type="target" position={Position.Left} isConnectable={isConnectable} className="!opacity-0" />
-        <Handle type="source" position={Position.Right} isConnectable={isConnectable} className="!opacity-0" />
-        <Handle type="target" position={Position.Top} isConnectable={isConnectable} className="!opacity-0" />
-        <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} className="!opacity-0" />
+        {/* Handles are invisible but necessary for layout routing */}
+        <Handle type="target" position={Position.Left} className="!opacity-0" />
+        <Handle type="source" position={Position.Right} className="!opacity-0" />
       </div>
     );
   }
 
+  // 2. LEAF NODE (Service Card)
   return (
     <div className={cn(
-      "group flex flex-col items-center w-[220px] transition-transform duration-200",
-      selected ? "scale-105" : "scale-100"
+      "group relative flex flex-col items-center justify-center w-[200px] p-4 rounded-xl transition-all duration-200",
+      "bg-white dark:bg-[#1e1e1e] border border-zinc-200 dark:border-zinc-700",
+      selected ? "ring-2 ring-blue-500 shadow-xl" : "shadow-sm hover:shadow-md hover:border-zinc-300 dark:hover:border-zinc-600"
     )}>
-      {/* 4 Handles for Components: Top, Bottom, Left, Right */}
-      <Handle type="target" position={Position.Left} className="!w-3 !h-3 !bg-zinc-400 !border-none !-left-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-      <Handle type="source" position={Position.Right} className="!w-3 !h-3 !bg-zinc-400 !border-none !-right-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-      <Handle type="target" position={Position.Top} className="!w-3 !h-3 !bg-zinc-400 !border-none !-top-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-      <Handle type="source" position={Position.Bottom} className="!w-3 !h-3 !bg-zinc-400 !border-none !-bottom-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+      {/* Connector Handles - Left/Right for Horizontal Layout */}
+      <Handle 
+        type="target" 
+        position={Position.Left} 
+        isConnectable={isConnectable}
+        className="!w-2 !h-2 !bg-zinc-400 dark:!bg-zinc-500 !border-2 !border-white dark:!border-zinc-900 !-left-1 opacity-0 group-hover:opacity-100 transition-opacity" 
+      />
 
-      {/* Large Floating Outline Icon - Increased to 84px */}
-      <div className="w-28 h-28 flex items-center justify-center text-zinc-800 dark:text-zinc-200 mb-4 relative">
-        {IconComponent ? (
-          <IconComponent size={84} strokeWidth={1} />
-        ) : (
-          <LucideIcons.Box size={84} strokeWidth={1} />
-        )}
+      {/* Content Layout: Icon Left, Text Right (Horizontal Card) or Stacked */}
+      <div className="flex flex-col items-center gap-2 w-full">
+          <div className="p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200">
+            <Icon size={24} strokeWidth={1.5} />
+          </div>
+
+          <div className="text-center w-full">
+            <h3 className="text-[13px] font-semibold text-zinc-900 dark:text-zinc-100 leading-tight">
+              {data.label}
+            </h3>
+            {data.description && (
+              <p className="mt-1 text-[10px] font-medium text-zinc-500 dark:text-zinc-400 leading-snug line-clamp-2 px-1">
+                {data.description}
+              </p>
+            )}
+          </div>
       </div>
 
-      <div className="flex flex-col items-center text-center max-w-full space-y-1.5">
-        <span className="font-semibold text-[19px] tracking-tight text-zinc-900 dark:text-zinc-50 leading-tight">
-          {data.label}
-        </span>
-        {data.description && (
-          <span className="text-[14px] font-normal text-zinc-500 dark:text-zinc-400 leading-snug">
-            {data.description}
-          </span>
-        )}
-      </div>
+      <Handle 
+        type="source" 
+        position={Position.Right} 
+        isConnectable={isConnectable}
+        className="!w-2 !h-2 !bg-zinc-400 dark:!bg-zinc-500 !border-2 !border-white dark:!border-zinc-900 !-right-1 opacity-0 group-hover:opacity-100 transition-opacity" 
+      />
     </div>
   );
 };

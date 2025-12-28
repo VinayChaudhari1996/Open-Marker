@@ -1,34 +1,86 @@
 
-import { GroundingSource, GraphNode, AgentStatus, GraphData } from "../types";
-import { ThreadMetadata, MemoryMessage } from "../mastra/memory";
+import { GoogleGenAI } from "@google/genai";
+import { GroundingSource, GraphNode, AgentStatus, GraphData, SessionContext } from "../types";
 
 export interface StreamResponse {
   textChunk?: string;
+  fullText?: string;
   sources?: GroundingSource[];
   agentStatus?: AgentStatus;
 }
 
-/**
- * Stream implementation removed. 
- * Preparing for new architectural design.
- */
-export async function* streamAgentResponse(prompt: string, threadId?: string): AsyncGenerator<StreamResponse, string, unknown> {
-  yield { agentStatus: { type: 'info', message: "System idle. Awaiting new design..." } };
-  return "System is ready for the new design implementation.";
-}
+const SYSTEM_INSTRUCTION = `You are a SOFTWARE ARCHITECT specialized in HORIZONTAL PIPELINE DIAGRAMS.
 
-export async function inspectGraph(graphData: GraphData): Promise<GraphData> {
-    return graphData;
-}
+--- VISUAL GOAL ---
+Create a logical Left-to-Right data flow diagram. Group related components into specific labeled Containers.
 
-export async function generateIconMapping(nodes: GraphNode[]): Promise<Record<string, string>> {
-    return {};
-}
+--- LAYOUT & GROUPING RULES ---
+1. **FLOW DIRECTION**: The diagram MUST flow from Left (Input/Client) -> Center (Processing) -> Right (Storage/Output).
+2. **CONTAINER USAGE**:
+   - **System Boundaries** (e.g., "User Interface", "External Systems"): Use \`variant: "amber"\`.
+   - **Internal Groups** (e.g., "Processing Pipeline", "Backend Services"): Use \`variant: "amber"\` for the main wrapper, and \`variant: "blue"\` for sub-groups if needed.
+   - **NEVER** leave nodes orphan if they belong to a logical group.
 
-export async function getSessions(): Promise<ThreadMetadata[]> {
-    return [];
-}
+--- NODE STRUCTURE ---
+- **Leaf Nodes**: Represents specific services (e.g., "React App", "Redis", "Lambda").
+- **Containers**: Wraps multiple leaf nodes.
 
-export async function getSessionMessages(threadId: string): Promise<MemoryMessage[]> {
-    return [];
+--- OUTPUT FORMAT (JSON) ---
+{
+  "nodes": [
+    // 1. Containers
+    { "id": "ui_group", "type": "custom", "data": { "label": "USER INTERFACE", "isContainer": true, "icon": "Monitor", "variant": "amber" } },
+    { "id": "pipeline_group", "type": "custom", "data": { "label": "PROCESSING PIPELINE", "isContainer": true, "icon": "Cpu", "variant": "amber" } },
+    { "id": "data_subgroup", "parentId": "pipeline_group", "type": "custom", "data": { "label": "DATA PREP", "isContainer": true, "icon": "Filter", "variant": "blue" } },
+
+    // 2. Leaf Nodes
+    { "id": "upload", "parentId": "ui_group", "type": "custom", "data": { "label": "Image Upload", "icon": "Upload", "description": "Drag & Drop" } },
+    { "id": "cleaner", "parentId": "data_subgroup", "type": "custom", "data": { "label": "Image Cleaner", "icon": "Sparkles", "description": "Remove noise" } },
+    { "id": "vector_db", "type": "custom", "data": { "label": "Vector DB", "icon": "Database", "description": "Pinecone" } } // External nodes allowed if appropriate
+  ],
+  "edges": [
+    { "id": "e1", "source": "upload", "target": "cleaner", "label": "Raw Image" },
+    { "id": "e2", "source": "cleaner", "target": "vector_db", "label": "Embeddings" }
+  ]
+}
+`;
+
+export async function* streamAgentResponse(
+  userInput: string, 
+  sessionContext: SessionContext
+): AsyncGenerator<StreamResponse, void, unknown> {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
+  const context = {
+    current_graph: {
+      nodes: sessionContext.nodes.map(n => ({ id: n.id, label: n.data.label, parentId: n.parentId })),
+      edges: sessionContext.edges.map(e => ({ source: e.source, target: e.target }))
+    },
+    request: userInput
+  };
+
+  try {
+    const stream = await ai.models.generateContentStream({
+      model: "gemini-3-flash-preview",
+      contents: [{ role: 'user', parts: [{ text: JSON.stringify(context) }] }],
+      config: { 
+        systemInstruction: SYSTEM_INSTRUCTION, 
+        responseMimeType: "application/json",
+        temperature: 0.1
+      }
+    });
+
+    let fullText = "";
+    for await (const chunk of stream) {
+      fullText += chunk.text;
+      yield { 
+        textChunk: chunk.text, 
+        fullText: fullText,
+        agentStatus: { type: 'info', message: "Drafting pipeline..." } 
+      };
+    }
+  } catch (error) {
+    console.error("AI Stream Error:", error);
+    yield { agentStatus: { type: 'error', message: "Generation failed." } };
+  }
 }

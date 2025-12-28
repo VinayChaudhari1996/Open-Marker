@@ -1,3 +1,4 @@
+
 import { GraphData } from "../types";
 
 /**
@@ -5,11 +6,15 @@ import { GraphData } from "../types";
  * Scans a growing text buffer to find valid 'nodes' and 'edges' arrays before the full JSON is complete.
  */
 export const extractPartialGraphFromText = (text: string): GraphData | null => {
-    // Regex to find the arrays within the potentially incomplete JSON structure
-    const nodesMatch = text.match(/"nodes"\s*:\s*\[([\s\S]*?)\]/);
-    const edgesMatch = text.match(/"edges"\s*:\s*\[([\s\S]*?)\]/);
+    // Attempt to extract nodes and edges arrays using regex
+    // We look for everything from "nodes": [ to the last possible closing ]
+    const nodesRegex = /"nodes"\s*:\s*\[([\s\S]*?)\]/;
+    const edgesRegex = /"edges"\s*:\s*\[([\s\S]*?)\]/;
+
+    const nodesMatch = text.match(nodesRegex);
+    const edgesMatch = text.match(edgesRegex);
     
-    // Helper to parse comma-separated JSON objects from a raw string
+    // Helper to parse comma-separated JSON objects from a raw string, even if the last one is incomplete
     const parsePartialArray = (arrayString: string) => {
         const items = [];
         let braceCount = 0;
@@ -19,7 +24,7 @@ export const extractPartialGraphFromText = (text: string): GraphData | null => {
         for (let i = 0; i < arrayString.length; i++) {
             const char = arrayString[i];
             
-            // Handle string visuals to ignore braces inside strings
+            // Handle strings to ignore braces inside them
             if (char === '"' && arrayString[i-1] !== '\\') {
                 inString = !inString;
             }
@@ -33,9 +38,13 @@ export const extractPartialGraphFromText = (text: string): GraphData | null => {
                     if (braceCount === 0 && startIndex !== -1) {
                         try {
                             const jsonStr = arrayString.substring(startIndex, i + 1);
-                            items.push(JSON.parse(jsonStr));
+                            const parsed = JSON.parse(jsonStr);
+                            // Only add if it looks like a valid node/edge
+                            if (parsed.id || parsed.source) {
+                                items.push(parsed);
+                            }
                         } catch (e) { 
-                            // Ignore malformed objects during streaming
+                            // Expected error for incomplete JSON chunks
                         }
                         startIndex = -1;
                     }
@@ -48,7 +57,7 @@ export const extractPartialGraphFromText = (text: string): GraphData | null => {
     const nodes = nodesMatch ? parsePartialArray(nodesMatch[1]) : [];
     const edges = edgesMatch ? parsePartialArray(edgesMatch[1]) : [];
 
-    if (nodes.length === 0) return null;
+    if (nodes.length === 0 && edges.length === 0) return null;
 
     return { nodes, edges };
 };
@@ -80,7 +89,6 @@ export const parseGraphFromText = (text: string): GraphData => {
         return { nodes: validNodes, edges };
     } catch (parseError) {
         console.error("JSON Parse Error:", parseError);
-        // Return empty graph rather than crashing
         return { nodes: [], edges: [] };
     }
 };
