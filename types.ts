@@ -1,40 +1,56 @@
 
-export type NodeType = 'client' | 'service' | 'database' | 'interface';
+export type DiagramType = 'flowchart' | 'architecture' | 'process' | 'decision-tree' | 'sequence' | 'mindmap';
+export type Intent = 'create' | 'update' | 'delete' | 'clarify';
 
-export interface GraphNode {
+/**
+ * Defines the semantic categories for diagram nodes.
+ */
+export type NodeType = 'client' | 'service' | 'database' | 'interface' | 'custom' | 'note' | 'step' | 'container';
+
+export interface ReactFlowNode {
   id: string;
-  label?: string;
-  type?: string;
-  description?: string;
-  data?: {
+  type: string;
+  parentId?: string;
+  position: { x: number; y: number };
+  data: {
     label: string;
-    type: NodeType;
-    description: string;
+    description?: string;
     icon?: string;
+    isContainer?: boolean;
+    [key: string]: any;
   };
+  width?: number;
+  height?: number;
 }
 
-export interface GraphEdge {
-  id?: string;
+export interface ReactFlowEdge {
+  id: string;
   source: string;
   target: string;
   label?: string;
-  markerEnd?: any;
+  type?: string;
+  animated?: boolean;
 }
 
-export interface GraphData {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
+export interface SessionContext {
+  nodes: ReactFlowNode[];
+  edges: ReactFlowEdge[];
+  diagram_type: string;
 }
 
-export interface GroundingSource {
-  title: string;
-  uri: string;
+export interface AgentMemory {
+  [key: string]: any;
 }
 
-export interface GenerationResult {
-  graphData: GraphData;
-  sources: GroundingSource[];
+export interface AgentOutput {
+  intent: Intent;
+  diagram_type: DiagramType;
+  nodes: ReactFlowNode[];
+  edges: ReactFlowEdge[];
+  session_updates: Partial<SessionContext>;
+  memory_updates: Partial<AgentMemory>;
+  clarification_needed: boolean;
+  clarification_question: string;
 }
 
 export enum Sender {
@@ -42,15 +58,59 @@ export enum Sender {
   AI = 'ai'
 }
 
-export interface AgentStatus {
-  type: 'info' | 'success' | 'warning';
-  message: string;
-}
-
 export interface ChatMessage {
   id: string;
   sender: Sender;
   text: string;
-  isStreaming?: boolean;
-  sources?: GroundingSource[];
+  isClarification?: boolean;
+}
+
+/**
+ * NEW TYPES FOR AGENT ORCHESTRATION
+ */
+
+// Added GraphNode for general representation of architecture components
+export interface GraphNode {
+  id: string;
+  type?: string;
+  label?: string; // Fallback label
+  position?: { x: number; y: number };
+  data?: {
+    label?: string;
+    type?: string;
+    description?: string;
+    icon?: string;
+    isContainer?: boolean;
+    [key: string]: any;
+  };
+  parentId?: string;
+  [key: string]: any;
+}
+
+// Added GraphEdge for general representation of connections
+export interface GraphEdge {
+  id?: string;
+  source: string;
+  target: string;
+  label?: string;
+  animated?: boolean;
+  type?: string;
+}
+
+// Added GraphData to wrap nodes and edges for processing
+export interface GraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+// Added GroundingSource for Google Search result tracking
+export interface GroundingSource {
+  title: string;
+  uri: string;
+}
+
+// Added AgentStatus for UI feedback during generation
+export interface AgentStatus {
+  type: 'info' | 'error' | 'success';
+  message: string;
 }

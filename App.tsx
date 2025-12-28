@@ -1,40 +1,33 @@
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import ReactFlow, {
   Controls,
   Edge,
   Node as FlowNode,
   useNodesState,
   useEdgesState,
-  MarkerType,
   Panel,
   ReactFlowInstance,
   getRectOfNodes,
-  getTransformForBounds
+  MarkerType
 } from 'reactflow';
 import { 
-  Route,
-  CornerDownRight,
-  Minus,
-  Waves,
-  ChevronDown,
-  Type,
-  Highlighter,
   PanelLeftOpen,
   Plus,
   Copy,
-  Check
+  Check,
+  Layout,
+  Highlighter,
+  Loader2
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
-import { Sender, ChatMessage } from './types';
-import { streamAgentResponse, getSessions, getSessionMessages, generateIconMapping } from './services/flowService';
-import { extractPartialGraphFromText, parseGraphFromText } from './lib/parsing';
+import { Sender, ChatMessage, SessionContext, AgentMemory, AgentOutput, ReactFlowNode } from './types';
+import { generateDiagram } from './services/geminiService';
 import { transformDataToFlow } from './lib/graphUtils';
 import CustomNode from './components/CustomNode';
 import NoteNode from './components/NoteNode';
 import EditModal from './components/EditModal';
 import Sidebar from './components/Sidebar';
-import { ThreadMetadata } from './mastra/memory';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -46,111 +39,60 @@ const nodeTypes = { custom: CustomNode, note: NoteNode };
 
 const App: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([{
-        id: '1', sender: Sender.AI, text: "Hi! I'm Open Marker. Describe a system, and I'll diagram it."
+        id: '1', sender: Sender.AI, text: "Welcome. Describe your system architecture and I'll generate a clean, containerized diagram for you."
   }]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [agentStatus, setAgentStatus] = useState<string>("");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [edgeType, setEdgeType] = useState('smoothstep');
-  const [isEdgeTypeOpen, setIsEdgeTypeOpen] = useState(false);
-  const [sidebarView, setSidebarView] = useState<'chat' | 'history'>('chat');
-  const [sessions, setSessions] = useState<ThreadMetadata[]>([]);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
   const [isCopying, setIsCopying] = useState(false);
 
-  // Edit Node State
-  const [editingNode, setEditingNode] = useState<FlowNode | null>(null);
-  const [editForm, setEditForm] = useState({ 
-      label: '', 
-      description: '', 
-      type: 'service', 
-      icon: '',
-      color: 'black' as 'black' | 'blue' | 'red'
-  });
-
-  // Edit Edge State
-  const [editingEdge, setEditingEdge] = useState<Edge | null>(null);
-  const [editEdgeLabel, setEditEdgeLabel] = useState('');
+  const [sessionContext, setSessionContext] = useState<SessionContext>({ nodes: [], edges: [], diagram_type: '' });
   
-  const threadIdRef = useRef<string>(Date.now().toString());
-  const edgeTypeRef = useRef('smoothstep');
-  const isDarkModeRef = useRef(false);
-  const lastLayoutTime = useRef<number>(0);
-
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  // Theme Init
+  const [editingNode, setEditingNode] = useState<FlowNode | null>(null);
+  const [editForm, setEditForm] = useState({ label: '', description: '', type: 'service', icon: '', color: 'black' as any });
+  const [editingEdge, setEditingEdge] = useState<Edge | null>(null);
+  const [editEdgeLabel, setEditEdgeLabel] = useState('');
+
   useEffect(() => {
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
         setIsDarkMode(true);
     }
   }, []);
 
-  // Theme Toggle Effect
   useEffect(() => {
-    isDarkModeRef.current = isDarkMode;
     if (isDarkMode) document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
     
-    // Refresh edges color immediately
-    const newBgColor = isDarkMode ? '#212121' : '#FFFFFF';
+    const color = isDarkMode ? '#FFFFFF' : '#18181b';
+    const bgColor = isDarkMode ? '#18181b' : '#FFFFFF';
     
-    setEdges(eds => eds.map(e => ({
-        ...e,
-        style: { ...e.style, stroke: isDarkMode ? '#FFF' : '#000' },
-        labelStyle: { 
-            ...e.labelStyle, 
-            fill: isDarkMode ? '#FFF' : '#000',
-        },
-        labelBgStyle: {
-            ...e.labelBgStyle,
-            fill: newBgColor // Update pill background on toggle
-        },
-        markerEnd: {
-            ...(typeof e.markerEnd === 'object' ? e.markerEnd : { type: MarkerType.ArrowClosed }),
-            color: isDarkMode ? '#FFF' : '#000'
-        }
+    setEdges((eds) => eds.map(e => ({
+      ...e,
+      style: { ...e.style, stroke: color },
+      labelStyle: { ...e.labelStyle, fill: color },
+      labelBgStyle: { ...e.labelBgStyle, fill: bgColor },
+      markerEnd: typeof e.markerEnd === 'object' ? { ...e.markerEnd, color: color } : e.markerEnd
     })));
   }, [isDarkMode, setEdges]);
 
-  useEffect(() => {
-    edgeTypeRef.current = edgeType;
-    setEdges((eds) => eds.map((e) => ({ ...e, type: edgeType })));
-  }, [edgeType, setEdges]);
-
-  // Load Sessions
-  useEffect(() => {
-      if (sidebarView === 'history') getSessions().then(setSessions);
-  }, [sidebarView]);
-
-  // Edit Node Handlers
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: FlowNode) => {
     event.preventDefault();
     setEditingNode(node);
-    
-    if (node.type === 'note') {
-        setEditForm({
-            label: node.data.label || '',
-            description: '',
-            type: 'service',
-            icon: '',
-            color: node.data.color || 'black'
-        });
-    } else {
-        setEditForm({
-            label: node.data.label || '',
-            description: node.data.description || '',
-            type: node.data.type || 'service',
-            icon: node.data.icon || '',
-            color: 'black'
-        });
-    }
+    setEditForm({
+        label: node.data.label || '',
+        description: node.data.description || '',
+        type: node.data.type || 'service',
+        icon: node.data.icon || '',
+        color: node.data.color || 'black'
+    });
   }, []);
 
-  // Edit Edge Handlers
   const onEdgeDoubleClick = useCallback((event: React.MouseEvent, edge: Edge) => {
     event.preventDefault();
     setEditingEdge(edge);
@@ -159,232 +101,113 @@ const App: React.FC = () => {
 
   const handleSaveNode = () => {
     if (!editingNode) return;
-    setNodes((nds) => nds.map((n) => {
-      if (n.id === editingNode.id) {
-        if (n.type === 'note') {
-            return {
-                ...n,
-                data: {
-                    ...n.data,
-                    label: editForm.label,
-                    color: editForm.color
-                }
-            };
-        }
-        return {
-          ...n,
-          data: {
-            ...n.data,
-            label: editForm.label,
-            description: editForm.description,
-            type: editForm.type,
-            icon: editForm.icon
-          }
-        };
-      }
-      return n;
-    }));
+    setNodes((nds) => nds.map((n) => n.id === editingNode.id ? { ...n, data: { ...n.data, ...editForm } } : n));
     setEditingNode(null);
   };
 
   const handleSaveEdge = () => {
     if (!editingEdge) return;
-    setEdges((eds) => eds.map((e) => {
-      if (e.id === editingEdge.id) {
-        return { ...e, label: editEdgeLabel };
-      }
-      return e;
-    }));
+    setEdges((eds) => eds.map((e) => e.id === editingEdge.id ? { ...e, label: editEdgeLabel } : e));
     setEditingEdge(null);
   };
 
-  const handleAddNote = () => {
-    if (!rfInstance) return;
-    const center = rfInstance.screenToFlowPosition({
-        x: window.innerWidth / 2,
-        y: window.innerHeight / 2
-    });
+  const cleanUpDiagramData = (nodes: ReactFlowNode[]) => {
+    // 1. Identify containers that actually have children
+    const parentIds = new Set(nodes.filter(n => n.parentId).map(n => n.parentId));
     
-    const newNote: FlowNode = {
-        id: `note-${Date.now()}`,
-        type: 'note',
-        position: center,
-        data: { label: 'New Note', color: 'black' },
-    };
-    
-    setNodes((nds) => [...nds, newNote]);
-  };
-
-  const copyDiagramAsPng = useCallback(async () => {
-    if (!rfInstance || nodes.length === 0) return;
-    setIsCopying(true);
-    
-    const nodesBounds = getRectOfNodes(nodes);
-    const imageWidth = nodesBounds.width + 100;
-    const imageHeight = nodesBounds.height + 100;
-    const transform = getTransformForBounds(nodesBounds, imageWidth, imageHeight, 0.5, 2);
-
-    const viewportElem = document.querySelector('.react-flow__viewport') as HTMLElement;
-
-    if (viewportElem) {
-        try {
-            const dataUrl = await toPng(viewportElem, {
-                backgroundColor: isDarkModeRef.current ? '#212121' : '#FFFFFF',
-                width: imageWidth,
-                height: imageHeight,
-                style: {
-                    width: imageWidth.toString(),
-                    height: imageHeight.toString(),
-                    transform: `translate(${transform[0]}px, ${transform[1]}px) scale(${transform[2]})`,
-                },
-            });
-
-            const res = await fetch(dataUrl);
-            const blob = await res.blob();
-            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-            
-            setAgentStatus("Copied PNG to clipboard!");
-            setTimeout(() => setAgentStatus(""), 3000);
-        } catch (err) {
-            console.error('Failed to copy diagram:', err);
-            setAgentStatus("Failed to copy image.");
+    // 2. Filter nodes: keep non-containers, and containers that have children
+    return nodes.filter(node => {
+        if (node.data?.isContainer) {
+            return parentIds.has(node.id);
         }
-    }
-    
-    setIsCopying(false);
-  }, [rfInstance, nodes]);
+        return true;
+    });
+  };
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
 
-    const userMsg: ChatMessage = { id: Date.now().toString(), sender: Sender.USER, text };
-    const aiMsgId = (Date.now() + 1).toString();
-    
-    setMessages(prev => [...prev, userMsg, { id: aiMsgId, sender: Sender.AI, text: "", isStreaming: true }]);
-    if (text === inputValue) setInputValue('');
-    
+    setMessages(prev => [...prev, { id: Date.now().toString(), sender: Sender.USER, text }]);
+    setInputValue('');
     setIsLoading(true);
-    setAgentStatus("Thinking...");
+    setAgentStatus("Architecting...");
 
     try {
-        const stream = streamAgentResponse(userMsg.text, threadIdRef.current);
-        let accumulatedText = "";
+        const output: AgentOutput = await generateDiagram(text, sessionContext, {});
 
-        for await (const chunk of stream) {
-            if (chunk.agentStatus) setAgentStatus(chunk.agentStatus.message);
-            if (chunk.textChunk) {
-                accumulatedText += chunk.textChunk;
-                setMessages(prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, text: accumulatedText } : msg));
-
-                const now = Date.now();
-                if (now - lastLayoutTime.current > 400) {
-                    const partialGraph = extractPartialGraphFromText(accumulatedText);
-                    if (partialGraph && partialGraph.nodes.length > 0) {
-                        const { nodes: lNodes, edges: lEdges } = transformDataToFlow(partialGraph, edgeTypeRef.current, isDarkModeRef.current);
-                        if (lNodes.length > 0) {
-                            setNodes(prev => {
-                                const notes = prev.filter(n => n.type === 'note');
-                                return [...lNodes, ...notes];
-                            });
-                            setEdges(lEdges);
-                            lastLayoutTime.current = now;
-                        }
-                    }
-                }
-            }
-        }
-
-        const finalGraphData = parseGraphFromText(accumulatedText);
-        
-        if (finalGraphData.nodes.length > 0) {
-            // RENDER FINAL GRAPH DIRECTLY (Inspector skipped for speed)
-            let { nodes: finalNodes, edges: finalEdges } = transformDataToFlow(finalGraphData, edgeTypeRef.current, isDarkModeRef.current);
-            setNodes(prev => {
-                const notes = prev.filter(n => n.type === 'note');
-                return [...finalNodes, ...notes];
-            });
-            setEdges(finalEdges);
-
-            // POLISH ICONS (FAST)
-            setAgentStatus("Polishing icons...");
-            const iconMap = await generateIconMapping(finalGraphData.nodes);
+        if (output.clarification_needed) {
+            setMessages(prev => [...prev, {
+                id: Date.now().toString(), sender: Sender.AI, text: output.clarification_question, isClarification: true
+            }]);
+        } else {
+            // Filter out empty containers from AI response
+            const cleanedNodes = cleanUpDiagramData(output.nodes);
             
-            if (Object.keys(iconMap).length > 0) {
-                const enrichedGraph = {
-                    ...finalGraphData,
-                    nodes: finalGraphData.nodes.map(n => ({
-                        ...n,
-                        data: { ...n.data!, icon: iconMap[n.id] || n.data?.icon }
-                    }))
-                };
-                const { nodes: iconNodes, edges: iconEdges } = transformDataToFlow(enrichedGraph, edgeTypeRef.current, isDarkModeRef.current);
-                setNodes(prev => {
-                    const notes = prev.filter(n => n.type === 'note');
-                    return [...iconNodes, ...notes];
-                });
-                setEdges(iconEdges);
-            }
-        }
-        
-        setMessages(prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, isStreaming: false } : msg));
+            const updatedContext = {
+                nodes: cleanedNodes,
+                edges: output.edges,
+                diagram_type: output.diagram_type
+            };
+            setSessionContext(updatedContext);
 
-    } catch (error: any) {
-        setMessages(prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, text: `Error: ${error.message}`, isStreaming: false } : msg));
+            const { nodes: lNodes, edges: lEdges } = transformDataToFlow({
+                nodes: updatedContext.nodes,
+                edges: updatedContext.edges
+            }, 'smoothstep', isDarkMode);
+
+            setNodes(lNodes);
+            setEdges(lEdges);
+
+            setMessages(prev => [...prev, {
+                id: Date.now().toString(), sender: Sender.AI, text: `Successfully generated the ${output.diagram_type} diagram.`
+            }]);
+        }
+    } catch (error) {
+        setMessages(prev => [...prev, { id: Date.now().toString(), sender: Sender.AI, text: "I encountered an error while building the diagram. Please try a different description." }]);
     } finally {
         setIsLoading(false);
         setAgentStatus("");
     }
   };
 
-  const loadSession = async (threadId: string) => {
-      setIsLoading(true);
-      threadIdRef.current = threadId;
-      const history = await getSessionMessages(threadId);
-      
-      const uiMessages: ChatMessage[] = history.map((m, i) => ({
-          id: `${threadId}-${i}`,
-          sender: m.role === 'user' ? Sender.USER : Sender.AI,
-          text: m.content
-      }));
-      setMessages(uiMessages);
-      setSidebarView('chat');
-
-      const lastGraphMsg = [...uiMessages].reverse().find(m => m.sender === Sender.AI && m.text.includes('```json'));
-      if (lastGraphMsg) {
-          const graphData = parseGraphFromText(lastGraphMsg.text);
-          if (graphData.nodes.length > 0) {
-               const { nodes: lNodes, edges: lEdges } = transformDataToFlow(graphData, edgeTypeRef.current, isDarkModeRef.current);
-               setNodes(lNodes); 
-               setEdges(lEdges);
-          }
-      } else {
-          setNodes([]);
-          setEdges([]);
-      }
-      setIsLoading(false);
-  };
+  const copyDiagramAsPng = useCallback(async () => {
+    if (!rfInstance || nodes.length === 0) return;
+    setIsCopying(true);
+    const viewportElem = document.querySelector('.react-flow__viewport') as HTMLElement;
+    if (viewportElem) {
+        try {
+            const nodesBounds = getRectOfNodes(nodes);
+            const dataUrl = await toPng(viewportElem, {
+                backgroundColor: isDarkMode ? '#18181b' : '#FFFFFF',
+                width: nodesBounds.width + 200,
+                height: nodesBounds.height + 200,
+            });
+            const res = await fetch(dataUrl);
+            const blob = await res.blob();
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            setAgentStatus("PNG Copied!");
+            setTimeout(() => setAgentStatus(""), 2000);
+        } catch (err) { console.error(err); }
+    }
+    setIsCopying(false);
+  }, [rfInstance, nodes, isDarkMode]);
 
   const resetChat = () => {
-      threadIdRef.current = Date.now().toString();
-      setMessages([{id: '1', sender: Sender.AI, text: "Ready."}]);
-      setNodes([]);
-      setEdges([]);
+    setMessages([{ id: '1', sender: Sender.AI, text: "Canvas cleared. What should we build next?" }]);
+    setNodes([]);
+    setEdges([]);
+    setSessionContext({ nodes: [], edges: [], diagram_type: '' });
   };
 
   return (
     <div className="flex h-screen w-full bg-white dark:bg-[#181818] text-zinc-900 dark:text-zinc-100 font-sans overflow-hidden">
-      
       <Sidebar 
           isSidebarCollapsed={isSidebarCollapsed}
           setIsSidebarCollapsed={setIsSidebarCollapsed}
           resetChat={resetChat}
           isDarkMode={isDarkMode}
           setIsDarkMode={setIsDarkMode}
-          sidebarView={sidebarView}
-          setSidebarView={setSidebarView}
           messages={messages}
-          sessions={sessions}
-          loadSession={loadSession}
           inputValue={inputValue}
           setInputValue={setInputValue}
           sendMessage={sendMessage}
@@ -392,87 +215,45 @@ const App: React.FC = () => {
           agentStatus={agentStatus}
       />
 
-      <main className="flex-grow relative bg-white dark:bg-[#212121]">
-         <div className="absolute inset-0 opacity-[0.15] dark:opacity-20 pointer-events-none" 
-              style={{ 
-                  backgroundImage: `radial-gradient(${isDarkMode ? '#9ca3af' : '#000000'} 1px, transparent 1px)`, 
-                  backgroundSize: '24px 24px' 
-              }}>
-         </div>
+      <main className="flex-grow relative bg-white dark:bg-[#181818]">
+         <div className="absolute inset-0 opacity-[0.05] dark:opacity-10 pointer-events-none dotted-grid"></div>
 
-         {/* Floating Sidebar Trigger (Visible when collapsed) */}
          {isSidebarCollapsed && (
-            <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 p-1.5 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm animate-in fade-in slide-in-from-left-2 duration-300">
-                <button 
-                    onClick={() => setIsSidebarCollapsed(false)}
-                    className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-300 transition-colors"
-                    title="Open Sidebar"
-                >
-                    <PanelLeftOpen size={20} />
-                </button>
+            <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 p-1.5 glass rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-800">
+                <button onClick={() => setIsSidebarCollapsed(false)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"><PanelLeftOpen size={20} /></button>
                 <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800 mx-1" />
-                <button 
-                    onClick={() => {
-                        setIsSidebarCollapsed(false);
-                        resetChat();
-                    }}
-                    className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-300 transition-colors"
-                    title="New Diagram"
-                >
-                    <Plus size={20} />
-                </button>
+                <button onClick={resetChat} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"><Plus size={20} /></button>
             </div>
          )}
 
          <ContextMenu>
-             <ContextMenuTrigger>
-                 <div className="w-full h-full">
-                     <ReactFlow
-                        nodes={nodes}
-                        edges={edges}
-                        onNodesChange={onNodesChange}
-                        onEdgesChange={onEdgesChange}
-                        nodeTypes={nodeTypes}
-                        onInit={setRfInstance}
-                        onNodeDoubleClick={onNodeDoubleClick}
-                        onEdgeDoubleClick={onEdgeDoubleClick}
-                        fitView
-                        deleteKeyCode={['Backspace', 'Delete']}
-                        defaultEdgeOptions={{ type: edgeType, animated: false }}
-                     >
-                        <Controls className="!bg-white dark:!bg-black !border-zinc-200 dark:!border-zinc-800 !rounded-lg !shadow-sm [&>button]:!border-none [&>button]:!text-black dark:[&>button]:!text-white" />
-                        
-                        <Panel position="top-right" className="m-6 flex gap-3">
-                            <button onClick={handleAddNote} className="flex items-center justify-center h-9 w-9 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-md text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors shadow-sm" title="Add Note">
-                                <Type size={16} />
-                            </button>
-                            <div className="relative">
-                                <button onClick={(e) => { e.stopPropagation(); setIsEdgeTypeOpen(!isEdgeTypeOpen); }} className="flex items-center gap-2 h-9 px-3 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-md text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors shadow-sm">
-                                    {edgeType === 'smoothstep' && <Route size={14}/>}
-                                    {edgeType === 'step' && <CornerDownRight size={14}/>}
-                                    {edgeType === 'default' && <Waves size={14}/>}
-                                    {edgeType === 'straight' && <Minus size={14}/>}
-                                    <span className="capitalize">{edgeType.replace('smoothstep', 'Smooth')}</span>
-                                    <ChevronDown size={14} className="opacity-50"/>
-                                </button>
-                                {isEdgeTypeOpen && (
-                                    <div className="absolute right-0 top-full mt-2 w-32 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-1 shadow-lg z-50 animate-in fade-in zoom-in-95 duration-100">
-                                        {['smoothstep', 'step', 'default', 'straight'].map(t => (
-                                            <button key={t} onClick={() => { setEdgeType(t); setIsEdgeTypeOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-md capitalize transition-colors">
-                                                {t.replace('smoothstep', 'Smooth')}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </Panel>
-                     </ReactFlow>
-                 </div>
+             <ContextMenuTrigger className="w-full h-full">
+                <ReactFlow
+                    nodes={nodes}
+                    edges={edges}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    nodeTypes={nodeTypes}
+                    onInit={setRfInstance}
+                    onNodeDoubleClick={onNodeDoubleClick}
+                    onEdgeDoubleClick={onEdgeDoubleClick}
+                    fitView
+                    deleteKeyCode={['Backspace', 'Delete']}
+                    colorMode={isDarkMode ? 'dark' : 'light'}
+                    >
+                    <Controls className="!bg-white dark:!bg-black !border-zinc-200 dark:!border-zinc-800 !rounded-lg" />
+                    <Panel position="top-right" className="m-6 flex gap-3">
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-xs font-bold text-zinc-500 uppercase tracking-widest shadow-sm">
+                           {isLoading ? <Loader2 size={14} className="animate-spin" /> : <Layout size={14} />} 
+                           Design Mode
+                        </div>
+                    </Panel>
+                </ReactFlow>
              </ContextMenuTrigger>
              <ContextMenuContent className="w-64">
                  <ContextMenuItem onSelect={copyDiagramAsPng} className="gap-2">
                      {isCopying ? <Check size={14} /> : <Copy size={14} />}
-                     Copy as PNG
+                     Export as PNG
                  </ContextMenuItem>
              </ContextMenuContent>
          </ContextMenu>
@@ -492,10 +273,10 @@ const App: React.FC = () => {
 
          {nodes.length === 0 && !isLoading && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="text-center opacity-30 flex flex-col items-center">
-                    <Highlighter size={64} strokeWidth={1} className="mb-4 text-zinc-900 dark:text-white"/>
-                    <h3 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-white">Start Marking</h3>
-                    <p className="text-sm text-zinc-500 mt-2">Describe your architecture to begin</p>
+                <div className="text-center opacity-20 flex flex-col items-center">
+                    <Highlighter size={80} strokeWidth={1} className="mb-6 text-zinc-400"/>
+                    <h3 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Clean Architecture</h3>
+                    <p className="text-sm text-zinc-500 mt-3 max-w-xs">Describe your image recognition app or any system to start generating diagrams.</p>
                 </div>
             </div>
          )}
